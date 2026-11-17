@@ -1,0 +1,8 @@
+# ELVIRA on Kubernetes: the catalog. Every other piece is a component in ../components/, named
+# like the Compose profiles. Don't apply this directly: `npm run configure` writes
+# config/k8s/kustomization.yaml, which adds your components, the elvira-env Secret made from .env,
+# the image tag and your host name.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - catalog.yaml

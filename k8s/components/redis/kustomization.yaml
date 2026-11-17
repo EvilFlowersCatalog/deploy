@@ -1,0 +1,5 @@
+# Redis in the cluster: Celery broker (db 7) and the catalog's cache (db 1). Compose profile: redis.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - redis.yaml

@@ -1,0 +1,54 @@
+# Readium LCP License (lcp) and Status (lsd) servers. The generator writes this file to
+# config/readium/config.yaml with ${…} filled in; edit the template, not the result.
+#
+# Every public link points at the catalog, which proxies licences, status documents and
+# encrypted content under /readium/v1/: readers never reach ports 8989/8990.
+
+# "basic" accepts EDRLab's test certificate; production certificates from EDRLab need "1.0".
+profile: "${ELVIRA_LCP_PROFILE}"
+
+lcp:
+  host: "0.0.0.0"
+  port: 8989
+  public_base_url: "https://${ELVIRA_DOMAIN}/readium/v1"
+  database: "sqlite3://file:/usr/local/var/readium/db/lcp.sqlite?cache=shared&mode=rwc"
+  auth_file: "/usr/local/etc/readium/htpasswd"
+
+lsd:
+  host: "0.0.0.0"
+  port: 8990
+  public_base_url: "https://${ELVIRA_DOMAIN}/readium/v1"
+  database: "sqlite3://file:/usr/local/var/readium/db/lsd.sqlite?cache=shared&mode=rwc"
+  auth_file: "/usr/local/etc/readium/htpasswd"
+  license_link_url: "https://${ELVIRA_DOMAIN}/readium/v1/licenses/{license_id}.lcpl"
+
+certificate:
+  cert: "${ELVIRA_LCP_CERT}"
+  private_key: "${ELVIRA_LCP_KEY}"
+
+license:
+  links:
+    status: "https://${ELVIRA_DOMAIN}/readium/v1/licenses/{license_id}/status"
+    hint: "https://${ELVIRA_DOMAIN}/readium/v1/hint"
+    publication: "https://${ELVIRA_DOMAIN}/readium/v1/content/{publication_id}"
+
+# lcpencrypt writes the encrypted copies into the shared data volume.
+storage:
+  mode: "fs"
+  filesystem:
+    directory: "/var/local/evilflowers"
+
+license_status:
+  register: true
+  renew: true
+  return: true
+  renting_days: 14
+  renew_days: 14
+
+# The status server tells the license server about returns and renewals with these.
+lsd_notify_auth:
+  username: "${ELVIRA_READIUM_USER}"
+  password: "${ELVIRA_READIUM_PASSWORD}"
+lcp_update_auth:
+  username: "${ELVIRA_READIUM_USER}"
+  password: "${ELVIRA_READIUM_PASSWORD}"

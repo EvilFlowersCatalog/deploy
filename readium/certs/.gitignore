@@ -1,0 +1,3 @@
+# Your production certificate from EDRLab: cert.pem and privkey.pem. Never committed.
+*
+!.gitignore

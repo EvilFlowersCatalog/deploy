@@ -1,0 +1,14 @@
+# Copy to ansible/inventory.yml (ignored by git) and fill in your server.
+elvira:
+  hosts:
+    library:
+      ansible_host: 203.0.113.10
+      ansible_user: ubuntu
+  vars:
+    # Let's Encrypt registration. Empty = no certificates (a test server without public DNS).
+    elvira_certbot_email: library@example.org
+    # The first administrator, created once. Leave the password empty to skip and create it by hand.
+    elvira_admin_username: admin
+    elvira_admin_password: ""
+    # Which catalog the portal shows (its id from /admin/); empty = the portal's default.
+    elvira_portal_catalog_id: ""

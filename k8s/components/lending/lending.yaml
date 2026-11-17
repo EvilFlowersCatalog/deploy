@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: readium
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+# The same file as readium/supervisord.conf (a test keeps them equal): both servers' logs to the
+# pod log instead of files inside the container.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: readium-supervisord
+data:
+  supervisord.conf: |
+    ; The readium image's supervisord, with both servers' output on the container's stdout/stderr
+    ; (the image writes them to files under /var/log/readium, invisible to docker logs).
+    [supervisord]
+    nodaemon=true
+    user=root
+    logfile=/dev/null
+    logfile_maxbytes=0
+
+    [program:lsd]
+    directory=/usr/local/var/readium
+    command=/usr/local/bin/lsdserver
+    autostart=true
+    autorestart=true
+    priority=900
+    stdout_logfile=/dev/fd/1
+    stdout_logfile_maxbytes=0
+    stderr_logfile=/dev/fd/2
+    stderr_logfile_maxbytes=0
+
+    [program:lcp]
+    directory=/usr/local/var/readium
+    command=/usr/local/bin/lcpserver
+    autostart=true
+    autorestart=true
+    priority=900
+    stdout_logfile=/dev/fd/1
+    stdout_logfile_maxbytes=0
+    stderr_logfile=/dev/fd/2
+    stderr_logfile_maxbytes=0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: readium
+  labels: {app.kubernetes.io/name: readium, app.kubernetes.io/part-of: elvira}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: readium}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: readium, app.kubernetes.io/part-of: elvira}
+    spec:
+      containers:
+        - name: readium
+          image: ghcr.io/evilflowerscatalog/readium-lcp-server:master
+          ports:
+            - {name: lcp, containerPort: 8989}
+            - {name: lsd, containerPort: 8990}
+          readinessProbe: {tcpSocket: {port: lcp}, periodSeconds: 10}
+          volumeMounts:
+            - {name: data, mountPath: /var/local/evilflowers}
+            - {name: readium, mountPath: /usr/local/var/readium/db}
+            - {name: config, mountPath: /usr/local/etc/readium/config.yaml, subPath: config.yaml, readOnly: true}
+            - {name: config, mountPath: /usr/local/etc/readium/htpasswd, subPath: htpasswd, readOnly: true}
+            - {name: supervisord, mountPath: /etc/supervisord.conf, subPath: supervisord.conf, readOnly: true}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: data}
+        - name: readium
+          persistentVolumeClaim: {claimName: readium}
+        - name: config
+          secret: {secretName: readium}
+        - name: supervisord
+          configMap: {name: readium-supervisord}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: readium
+spec:
+  selector: {app.kubernetes.io/name: readium}
+  ports:
+    - {name: lcp, port: 8989, targetPort: lcp}
+    - {name: lsd, port: 8990, targetPort: lsd}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lcpencrypt
+  labels: {app.kubernetes.io/name: lcpencrypt, app.kubernetes.io/part-of: elvira}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: lcpencrypt}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: lcpencrypt, app.kubernetes.io/part-of: elvira}
+    spec:
+      containers:
+        - name: lcpencrypt
+          image: ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master
+          env:
+            - name: BROKER
+              valueFrom: {secretKeyRef: {name: elvira-env, key: CELERY_BROKER_URL}}
+            - {name: STORAGE_PATH, value: /var/local/evilflowers}
+            - {name: BROKER_VISIBILITY_TIMEOUT, value: "43200"}
+            - {name: CELERY_HOSTNAME, value: lcpencrypt@elvira}
+          volumeMounts:
+            - {name: data, mountPath: /var/local/evilflowers}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: data}

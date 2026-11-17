@@ -1,0 +1,33 @@
+# nginx in front of the catalog (and the portal), with certificates from Let's Encrypt.
+- name: nginx and certbot
+  ansible.builtin.apt:
+    name: [nginx, certbot, python3-certbot-nginx]
+    state: present
+
+- name: Site files from config/nginx/
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../config/nginx/{{ item }}.conf"
+    dest: "/etc/nginx/conf.d/elvira-{{ item }}.conf"
+    mode: "0644"
+  loop: "{{ ['catalog'] + (['portal'] if elvira_portal | bool else []) }}"
+  register: elvira_nginx
+
+- name: Configuration is valid
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: elvira_nginx.changed
+
+# The site files listen on port 80 only; certbot adds TLS and the redirect to them. A fresh copy
+# of a file drops those lines, so certbot reinstalls the certificate whenever a file changed.
+- name: Certificates (Let's Encrypt)
+  ansible.builtin.command:
+    argv: >-
+      {{ ['certbot', '--nginx', '--non-interactive', '--agree-tos', '--redirect', '--reinstall',
+          '--email', elvira_certbot_email, '--cert-name', elvira_domain, '-d', elvira_domain]
+         + (['-d', elvira_portal_domain] if elvira_portal | bool else []) }}
+  when: elvira_certbot_email | default('') | length > 0 and elvira_nginx.changed

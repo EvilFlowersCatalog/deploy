@@ -1,0 +1,36 @@
+# elvira-portal built on the server inside a Node container (no Node on the host), copied to
+# elvira_portal_root for nginx. Rebuilt when its source or its settings change.
+- name: Portal source
+  ansible.builtin.git:
+    repo: https://github.com/EvilFlowersCatalog/elvira-portal.git
+    dest: "{{ elvira_dir }}/portal-src"
+    version: "{{ elvira_portal_version | default('master') }}"
+  register: elvira_portal_src
+
+# Outside the checkout, so git sees no local changes. Vite prefers these to env/.env.production.
+- name: Build settings
+  ansible.builtin.copy:
+    dest: "{{ elvira_dir }}/portal.env"
+    content: |
+      ELVIRA_BASE_URL=https://{{ elvira_domain }}
+      ELVIRA_CATALOG_ID={{ elvira_portal_catalog_id | default('') }}
+      ELVIRA_THEME={{ elvira_portal_theme | default('default') }}
+      ELVIRA_UMAMI_SERVER=
+      ELVIRA_UMAMI_WEBSITE=
+      ELVIRA_EXPERIMENTAL_FEATURES=false
+    mode: "0644"
+  register: elvira_portal_env
+
+- name: Build
+  ansible.builtin.command:
+    cmd: >-
+      docker run --rm --env-file {{ elvira_dir }}/portal.env -v {{ elvira_dir }}/portal-src:/src -w /src node:24
+      sh -c "npm ci --no-audit --no-fund && npm run build:prod"
+  when: elvira_portal_src.changed or elvira_portal_env.changed
+
+- name: Publish
+  ansible.posix.synchronize:
+    src: "{{ elvira_dir }}/portal-src/dist/"
+    dest: "{{ elvira_portal_root }}/"
+    delete: true
+  delegate_to: "{{ inventory_hostname }}"

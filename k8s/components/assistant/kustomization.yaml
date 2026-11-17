@@ -1,0 +1,5 @@
+# Ollama for the reading assistant (Compose profile: assistant). Pull the model once (README).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - assistant.yaml

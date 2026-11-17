@@ -1,0 +1,72 @@
+# The catalog: gunicorn, Celery worker, scheduler and event listener under supervisord in one pod
+# (the image's own start), with every setting from the elvira-env Secret (.env).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+spec:
+  # Publications, covers, encrypted copies, extraction crops. Every worker mounts it: keep them on
+  # one node with ReadWriteOnce, or use a ReadWriteMany storage class.
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 20Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evilflowers
+  labels: {app.kubernetes.io/name: evilflowers, app.kubernetes.io/part-of: elvira}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/name: evilflowers}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: evilflowers, app.kubernetes.io/part-of: elvira}
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: evilflowers
+          image: ghcr.io/evilflowerscatalog/evilflowerscatalog:master
+          envFrom:
+            - secretRef: {name: elvira-env}
+          ports:
+            - {name: http, containerPort: 8000}
+          # Migrations and supervisord start first: give it five minutes.
+          startupProbe: {tcpSocket: {port: http}, periodSeconds: 10, failureThreshold: 30}
+          readinessProbe: {tcpSocket: {port: http}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, periodSeconds: 30}
+          volumeMounts:
+            - {name: data, mountPath: /var/local/evilflowers}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: evilflowers
+spec:
+  selector: {app.kubernetes.io/name: evilflowers}
+  ports:
+    - {name: http, port: 8000, targetPort: http}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: evilflowers
+  annotations:
+    # ingress-nginx; other controllers have their own names for the same limits.
+    nginx.ingress.kubernetes.io/proxy-body-size: 500m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+spec:
+  # Add ingressClassName and a tls block for your cluster in config/k8s/kustomization.yaml.
+  rules:
+    - host: library.example.org
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: evilflowers, port: {name: http}}

@@ -1,0 +1,38 @@
+# elvira-portal, the readers' web app: a single-page app built into ${ELVIRA_PORTAL_ROOT}.
+# `npm run configure` writes config/nginx/portal.conf from this template.
+#
+# Port 80 only: `certbot --nginx -d ${ELVIRA_PORTAL_DOMAIN}` then adds TLS and the redirect.
+
+# Hashed chunks (Vite: /assets/name-<8 characters>.ext) are cached for a year, everything else
+# revalidated on every load. Keyed on the status, so a missing chunk is never pinned.
+map "$status:$uri" $elvira_portal_cache_control {
+    "~^(?:200|206|304):/assets/[^/]+-[A-Za-z0-9_-]{8}\.(?:js|mjs|css|woff2?|ttf|png|jpe?g|gif|svg|webp|avif|wasm)$" "public, max-age=31536000, immutable";
+    default "no-cache";
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${ELVIRA_PORTAL_DOMAIN};
+    server_tokens off;
+
+    root ${ELVIRA_PORTAL_ROOT};
+    index index.html;
+
+    gzip on;
+    gzip_vary on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml image/svg+xml;
+
+    # At server level only: an add_header inside a location drops every inherited one.
+    add_header Cache-Control $elvira_portal_cache_control always;
+
+    # Deep links are routes of the app.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # A missing chunk (a tab opened before the last deploy) is a 404, not index.html as JavaScript.
+    location ~ "^/assets/[^/]+-[A-Za-z0-9_-]{8}\.(?:js|mjs|css|woff2?|ttf|png|jpe?g|gif|svg|webp|avif|wasm)$" {
+        try_files $uri =404;
+    }
+}
