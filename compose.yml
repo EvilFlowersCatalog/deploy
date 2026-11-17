@@ -81,10 +81,10 @@ services:
     volumes:
       - data:/var/local/evilflowers
       - readium:/usr/local/var/readium/db
-      # Written by `npm run configure` from readium/config.yaml.tmpl.
-      - ./config/readium/config.yaml:/usr/local/etc/readium/config.yaml:ro
-      - ./config/readium/htpasswd:/usr/local/etc/readium/htpasswd:ro
-      # Your production certificate from EDRLab, if you have one (readium/certs/README.md).
+      # Written by scripts/setup.sh (or downloaded from elvira.digital/deploy).
+      - ./readium/config.yaml:/usr/local/etc/readium/config.yaml:ro
+      - ./readium/htpasswd:/usr/local/etc/readium/htpasswd:ro
+      # Your production certificate from EDRLab, if you have one (see ELVIRA_LCP_* in .env).
       - ./readium/certs:/usr/local/etc/readium/certs:ro
       # Both servers' logs to docker logs instead of files inside the container.
       - ./readium/supervisord.conf:/etc/supervisord.conf:ro

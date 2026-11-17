@@ -1,5 +1,5 @@
-# ELVIRA catalog behind nginx. `npm run configure` writes config/nginx/catalog.conf from this
-# template; copy that to /etc/nginx/conf.d/ (the Ansible playbook does it for you).
+# ELVIRA catalog behind nginx. scripts/setup.sh writes nginx/catalog.conf from this template
+# with the values in .env; copy that to /etc/nginx/conf.d/ (the Ansible playbook does it).
 #
 # Port 80 only: `certbot --nginx -d ${ELVIRA_DOMAIN}` then adds TLS and the redirect.
 

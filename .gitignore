@@ -1,6 +1,8 @@
-# Your secrets and everything generated from elvira.json (npm run configure).
+# Your settings and secrets, and the files scripts/setup.sh writes from them.
 .env
-config/
+nginx/*.conf
+readium/config.yaml
+readium/htpasswd
 # Admin assets the catalog collects at every start.
 static/
 # Your servers.

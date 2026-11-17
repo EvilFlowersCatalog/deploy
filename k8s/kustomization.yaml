@@ -1,0 +1,40 @@
+# ELVIRA on Kubernetes. Edit, then:
+#
+#   kubectl create namespace elvira
+#   kubectl -n elvira create secret generic elvira-env --from-env-file=.env
+#   kubectl -n elvira create secret generic readium --from-file=readium/config.yaml --from-file=readium/htpasswd   # lending
+#   kubectl apply -n elvira -k k8s
+#
+# Run from the repository root; .env and readium/ come from scripts/setup.sh.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - base
+
+# The same names as the Compose profiles: uncomment what you run.
+components:
+  - components/postgres
+  - components/redis
+  # - components/lending
+  # - components/ocr          # develop images, amd64 nodes
+  # - components/search       # develop images, amd64 nodes
+  # - components/extraction   # develop images, amd64 nodes; needs search
+  # - components/assistant
+  # - components/mail
+  # - components/telemetry
+
+# master = stable, develop = development images.
+images:
+  - name: ghcr.io/evilflowerscatalog/evilflowerscatalog
+    newTag: master
+  - name: ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker
+    newTag: master
+
+patches:
+  # Your catalog's host name. Add ingressClassName and a tls block for your cluster here too.
+  - target: {kind: Ingress, name: evilflowers}
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: library.example.org

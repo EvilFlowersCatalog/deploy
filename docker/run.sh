@@ -9,7 +9,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
-[ -f .env ] || { echo "No .env here: run npm run configure (or cp .env.example .env) first." >&2; exit 1; }
+[ -f .env ] || { echo "No .env here: run scripts/setup.sh first." >&2; exit 1; }
 
 # Values from .env, read line by line: the file is not shell syntax (the JWK holds braces).
 env_value() { grep -E "^$1=" .env | tail -n 1 | cut -d= -f2-; }
