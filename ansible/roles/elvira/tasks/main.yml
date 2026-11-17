@@ -5,7 +5,7 @@
     state: directory
     mode: "0755"
 
-- name: Repository with .env and config/
+- name: This directory, with .env and the files setup.sh wrote
   ansible.posix.synchronize:
     src: "{{ playbook_dir }}/../"
     dest: "{{ elvira_dir }}/"

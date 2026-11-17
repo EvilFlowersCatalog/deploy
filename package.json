@@ -1,6 +1,6 @@
 {
   "name": "@evilflowers/elvira-deploy",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Everything to run ELVIRA: Docker Compose with profiles, Kubernetes with Kustomize, plain Docker, nginx and an Ansible playbook.",
   "repository": {
@@ -9,16 +9,11 @@
   },
   "homepage": "https://elvira.digital/deploy",
   "type": "module",
-  "exports": {
-    ".": "./generator/src/index.js"
-  },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "configure": "node generator/bin/elvira-deploy.js",
-    "bundle": "node generator/bundle.js",
-    "test": "node --test generator/test/generator.test.js",
-    "test:integration": "node generator/test/integration.js"
+    "test": "node --test test/blocks.test.js",
+    "test:integration": "node test/integration.js"
   }
 }

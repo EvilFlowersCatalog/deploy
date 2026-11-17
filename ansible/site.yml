@@ -1,27 +1,28 @@
 # One Debian or Ubuntu server running ELVIRA with Docker Compose, behind nginx with Let's Encrypt.
 #
-#   npm run configure                      # .env and config/ from elvira.json, on your machine
+#   scripts/setup.sh                                         # .env, nginx/ and readium/ files
 #   cp ansible/inventory.example.yml ansible/inventory.yml   # your server
 #   ansible-playbook -i ansible/inventory.yml ansible/site.yml
 #
-# Runs again safely: it copies what changed and restarts only what needs it.
+# Everything it needs comes from .env. Runs again safely: it copies what changed and restarts
+# only what needs it.
 - name: ELVIRA
   hosts: elvira
   become: true
   vars:
-    # Choices from elvira.json (the generator stores only what differs from its defaults).
-    elvira_settings: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../elvira.json', errors='ignore') | default('{}', true) | from_json }}"
-    elvira_env: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../.env') }}"
-    elvira_dir: "{{ elvira_settings.installDir | default('/opt/elvira') }}"
-    elvira_domain: "{{ elvira_env | regex_search('^ELVIRA_DOMAIN=(.*)$', '\\1', multiline=True) | first }}"
-    elvira_portal_domain: "{{ elvira_env | regex_search('^ELVIRA_PORTAL_DOMAIN=(.*)$', '\\1', multiline=True) | first }}"
-    elvira_portal: "{{ elvira_settings.portal | default(true) }}"
-    elvira_portal_root: "{{ elvira_settings.portalRoot | default('/var/www/elvira-portal') }}"
+    elvira_env_text: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../.env') }}"
+    elvira_dir: "{{ elvira_env_text | regex_search('^ELVIRA_DIR=(.*)$', '\\1', multiline=True) | first }}"
+    elvira_domain: "{{ elvira_env_text | regex_search('^ELVIRA_DOMAIN=(.*)$', '\\1', multiline=True) | first }}"
+    elvira_portal_domain: "{{ elvira_env_text | regex_search('^ELVIRA_PORTAL_DOMAIN=(.*)$', '\\1', multiline=True) | first }}"
+    elvira_portal_root: "{{ elvira_env_text | regex_search('^ELVIRA_PORTAL_ROOT=(.*)$', '\\1', multiline=True) | first }}"
+    elvira_portal: "{{ elvira_portal_domain | length > 0 }}"
   pre_tasks:
-    - name: The generator has run
+    - name: scripts/setup.sh has run
       ansible.builtin.assert:
-        that: elvira_domain | length > 0
-        fail_msg: "No .env next to compose.yml: run npm run configure first."
+        that:
+          - elvira_dir | length > 0
+          - lookup('ansible.builtin.fileglob', playbook_dir ~ '/../nginx/catalog.conf') | length > 0
+        fail_msg: "Run scripts/setup.sh first: it writes .env, nginx/ and readium/ files."
   roles:
     - docker
     - elvira

@@ -4,9 +4,9 @@
     name: [nginx, certbot, python3-certbot-nginx]
     state: present
 
-- name: Site files from config/nginx/
+- name: Site files from nginx/
   ansible.builtin.copy:
-    src: "{{ playbook_dir }}/../config/nginx/{{ item }}.conf"
+    src: "{{ playbook_dir }}/../nginx/{{ item }}.conf"
     dest: "/etc/nginx/conf.d/elvira-{{ item }}.conf"
     mode: "0644"
   loop: "{{ ['catalog'] + (['portal'] if elvira_portal | bool else []) }}"
