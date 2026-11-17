@@ -1,0 +1,6 @@
+# MailDev, catches every e-mail for testing (Compose profile: mail).
+# Inbox: kubectl port-forward svc/maildev 1080
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - mail.yaml

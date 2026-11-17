@@ -1,0 +1,51 @@
+# This repository, as configured on your machine, in elvira_dir, and the stack running.
+- name: Installation directory
+  ansible.builtin.file:
+    path: "{{ elvira_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Repository with .env and config/
+  ansible.posix.synchronize:
+    src: "{{ playbook_dir }}/../"
+    dest: "{{ elvira_dir }}/"
+    # Your inventory's SSH options (keys, ports, jump hosts) apply to rsync too.
+    use_ssh_args: true
+    rsync_opts:
+      - --exclude=.git
+      - --exclude=node_modules
+      - --exclude=static/
+      - --exclude=ansible/inventory.yml
+  register: elvira_files
+
+- name: .env readable by root only
+  ansible.builtin.file:
+    path: "{{ elvira_dir }}/.env"
+    mode: "0600"
+
+- name: Images
+  ansible.builtin.command:
+    cmd: docker compose pull --quiet
+    chdir: "{{ elvira_dir }}"
+  changed_when: false
+
+- name: Start (or update) the stack
+  ansible.builtin.command:
+    cmd: docker compose up -d --remove-orphans --wait --wait-timeout 900
+    chdir: "{{ elvira_dir }}"
+  register: elvira_up
+  changed_when: "'Started' in elvira_up.stderr or 'Recreated' in elvira_up.stderr"
+
+- name: First administrator
+  ansible.builtin.command:
+    cmd: >-
+      docker compose exec -T -e DJANGO_SUPERUSER_PASSWORD evilflowers
+      python3 manage.py createsuperuser --noinput --username {{ elvira_admin_username }} --name Admin --surname ELVIRA
+    chdir: "{{ elvira_dir }}"
+  environment:
+    DJANGO_SUPERUSER_PASSWORD: "{{ elvira_admin_password }}"
+  register: elvira_admin
+  changed_when: elvira_admin.rc == 0
+  failed_when: elvira_admin.rc != 0 and 'already taken' not in elvira_admin.stderr
+  when: elvira_admin_password | default('') | length > 0
+  no_log: true

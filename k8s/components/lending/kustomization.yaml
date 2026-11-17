@@ -1,0 +1,6 @@
+# Lending with Readium LCP (Compose profile: lending). The readium Secret (config.yaml, htpasswd)
+# comes from config/k8s/, written by npm run configure.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - lending.yaml

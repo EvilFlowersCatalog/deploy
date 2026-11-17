@@ -1,0 +1,235 @@
+# ELVIRA on Docker Compose.
+#
+# The catalog always runs. Everything else is a profile, switched on in .env:
+#
+#   COMPOSE_PROFILES=postgres,redis,lending
+#
+#   postgres    PostgreSQL on this machine (leave out to use your own: PGHOST in .env)
+#   redis       Redis on this machine (leave out to use your own: REDIS_HOST in .env)
+#   lending     Readium LCP license server and the lcpencrypt worker
+#   ocr         OCR for scanned PDFs                                    (develop images, amd64)
+#   search      embedding service for search by meaning                 (develop images, amd64)
+#   extraction  paragraphs, tables, figures and formulas from PDFs     (develop images, amd64)
+#   assistant   Ollama for the reading assistant
+#   mail        MailDev, catches e-mails for testing
+#   telemetry   Grafana with Tempo, Loki and Mimir
+#
+# .env holds every setting (see .env.example). Run docker compose from this directory.
+
+x-worker: &worker
+  restart: unless-stopped
+  volumes:
+    - data:/var/local/evilflowers
+
+services:
+  # ------------------------------------------------------------------ catalog (always)
+  evilflowers:
+    image: ${ELVIRA_CATALOG_IMAGE:-ghcr.io/evilflowerscatalog/evilflowerscatalog:master}
+    restart: unless-stopped
+    env_file: [.env]
+    # The admin assets are collected into ./static at every start; nginx serves them from there.
+    # Then the image's own start: migrate, load languages, run everything under supervisord.
+    command: [/bin/sh, -c, "python3 manage.py collectstatic --noinput --verbosity 0 && exec conf/entrypoint.sh"]
+    # Loopback only: nginx on this machine is the way in (ELVIRA_HTTP_BIND=0.0.0.0 to change).
+    ports: ["${ELVIRA_HTTP_BIND:-127.0.0.1}:8000:8000"]
+    volumes:
+      - data:/var/local/evilflowers
+      - ./static:/usr/src/app/static
+    depends_on:
+      postgres: {condition: service_healthy, required: false}
+      redis: {condition: service_healthy, required: false}
+    stop_grace_period: 60s
+
+  # ------------------------------------------------------------------ data
+  postgres:
+    profiles: [postgres]
+    # PostgreSQL 18 with pgvector and pg_search.
+    image: ghcr.io/evilflowerscatalog/evilflowers-postgresql:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PGDATABASE}
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    volumes:
+      # PostgreSQL 18 keeps its data in /var/lib/postgresql/18/docker.
+      - postgres:/var/lib/postgresql
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "${PGUSER}", "-d", "${PGDATABASE}"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    profiles: [redis]
+    # Celery broker (db 7) and the catalog's cache (db 1).
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 10
+
+  # ------------------------------------------------------------------ lending
+  readium:
+    profiles: [lending]
+    # License (8989) and Status (8990) servers. Readers never reach them: the catalog proxies
+    # licences, status documents and encrypted content under /readium/v1/.
+    image: ghcr.io/evilflowerscatalog/readium-lcp-server:master
+    restart: unless-stopped
+    volumes:
+      - data:/var/local/evilflowers
+      - readium:/usr/local/var/readium/db
+      # Written by `npm run configure` from readium/config.yaml.tmpl.
+      - ./config/readium/config.yaml:/usr/local/etc/readium/config.yaml:ro
+      - ./config/readium/htpasswd:/usr/local/etc/readium/htpasswd:ro
+      # Your production certificate from EDRLab, if you have one (readium/certs/README.md).
+      - ./readium/certs:/usr/local/etc/readium/certs:ro
+      # Both servers' logs to docker logs instead of files inside the container.
+      - ./readium/supervisord.conf:/etc/supervisord.conf:ro
+
+  lcpencrypt:
+    <<: *worker
+    profiles: [lending]
+    # Encrypts each lent title and registers it with the license server.
+    image: ${ELVIRA_LCPENCRYPT_IMAGE:-ghcr.io/evilflowerscatalog/evilflowers-lcpencrypt-worker:master}
+    environment:
+      BROKER: ${CELERY_BROKER_URL}
+      STORAGE_PATH: /var/local/evilflowers
+      BROKER_VISIBILITY_TIMEOUT: "43200"
+      # Node name, in full: the image's health check pings exactly this.
+      CELERY_HOSTNAME: lcpencrypt@elvira
+
+  # ------------------------------------------------------------------ OCR
+  ocr:
+    <<: *worker
+    profiles: [ocr]
+    # ocrmypdf and Tesseract. Runs as root: it creates <entry>/ocr/ in directories the catalog owns.
+    image: ghcr.io/evilflowerscatalog/evilflowers-ocr-service:master
+    platform: linux/amd64
+    user: "0:0"
+    command: [celery, -A, evilflowers_ocr_worker.worker, worker, --loglevel=INFO, -E, --concurrency=1, --queues=evilflowers_ocr_worker, --hostname=ocr@%h]
+    environment:
+      BROKER: ${CELERY_BROKER_URL}
+      STORAGE_PATH: /var/local/evilflowers
+      BROKER_VISIBILITY_TIMEOUT: "43200"
+      OCR_JOBS: "2"
+    tmpfs: [/tmp]
+
+  # ------------------------------------------------------------------ search
+  tei-embed:
+    profiles: [search]
+    # Text Embeddings Inference serving the model the catalog is built for (2.3 GB on first start).
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.4
+    platform: linux/amd64
+    restart: unless-stopped
+    command:
+      - --model-id=intfloat/multilingual-e5-large-instruct
+      - --revision=274baa43b0e13e37fafa6428dbc7938e62e5c439
+      - --port=80
+    environment:
+      API_KEY: ${EVILFLOWERS_EMBEDDING_API_KEY}
+    volumes:
+      - tei:/data
+
+  # ------------------------------------------------------------------ extraction
+  # Four workers that post their results to the catalog as a service user (EXTRACTION_API_KEY,
+  # README: "Extraction"). amd64 images.
+  analyzer:
+    <<: *worker
+    profiles: [extraction]
+    image: ghcr.io/evilflowerscatalog/evilflowers-analyzer-service:develop
+    platform: linux/amd64
+    command: [celery, -A, evilflowers_analyzer.worker, worker, --loglevel=INFO, -E, --concurrency=1, --queues=evilflowers_analyzer, --hostname=analyzer@%h]
+    environment: &extraction-env
+      REDIS_URL: ${CELERY_BROKER_URL}
+      STORAGE_PATH: /var/local/evilflowers
+      CATALOG_API_URL: http://evilflowers:8000
+      CATALOG_API_KEY: ${EXTRACTION_API_KEY}
+      BROKER_VISIBILITY_TIMEOUT: "43200"
+      HF_HOME: /models
+      LAYOUT_THREADS: "2"
+      OMP_NUM_THREADS: "2"
+      LAYOUT_BATCH_PAGES: "8"
+    volumes: &extraction-volumes
+      - data:/var/local/evilflowers
+      - models:/models
+    tmpfs: [/tmp]
+
+  image:
+    <<: *worker
+    profiles: [extraction]
+    image: ghcr.io/evilflowerscatalog/evilflowers-image-service:develop
+    platform: linux/amd64
+    command: [celery, -A, evilflowers_image.worker, worker, --loglevel=INFO, -E, --concurrency=1, --queues=evilflowers_image, --hostname=image@%h]
+    environment:
+      <<: *extraction-env
+      CAPTIONS_ENABLED: "0"
+    volumes: *extraction-volumes
+    tmpfs: [/tmp]
+
+  equation:
+    <<: *worker
+    profiles: [extraction]
+    image: ghcr.io/evilflowerscatalog/evilflowers-equation-service:develop
+    platform: linux/amd64
+    command: [celery, -A, evilflowers_equation.worker, worker, --loglevel=INFO, -E, --concurrency=1, --queues=evilflowers_equation, --hostname=equation@%h]
+    environment:
+      <<: *extraction-env
+      MODELS_PATH: /models/latex-ocr
+      LATEX_THREADS: "1"
+      LATEX_WORKERS: "2"
+    volumes: *extraction-volumes
+    tmpfs: [/tmp]
+
+  text:
+    <<: *worker
+    profiles: [extraction]
+    image: ghcr.io/evilflowerscatalog/evilflowers-text-service:develop
+    platform: linux/amd64
+    command: [celery, -A, evilflowers_text.worker, worker, --loglevel=INFO, -E, --concurrency=1, "--queues=evilflowers.text.paragraphs,evilflowers.text.tables,evilflowers_text_worker", --hostname=text@%h]
+    environment:
+      <<: *extraction-env
+      TEI_URL: ${EVILFLOWERS_EMBEDDING_URL}
+      TEI_API_KEY: ${EVILFLOWERS_EMBEDDING_API_KEY}
+      TEI_BATCH_SIZE: "8"
+      TABLE_REVIEW_ENABLED: "false"
+    tmpfs: [/tmp]
+
+  # ------------------------------------------------------------------ assistant
+  ollama:
+    profiles: [assistant]
+    # Starts empty: pull the model once (README: "Assistant"). The default needs ~25 GB of RAM.
+    image: ollama/ollama:0.40.15
+    restart: unless-stopped
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_CONTEXT_LENGTH: "32768"
+      OLLAMA_FLASH_ATTENTION: "1"
+    volumes:
+      - ollama:/root/.ollama
+
+  # ------------------------------------------------------------------ testing and operations
+  maildev:
+    profiles: [mail]
+    # Catches every e-mail the catalog sends. Inbox on http://127.0.0.1:1080.
+    image: maildev/maildev:2.2.1
+    restart: unless-stopped
+    ports: ["127.0.0.1:1080:1080"]
+
+  otel-lgtm:
+    profiles: [telemetry]
+    # OpenTelemetry collector, Tempo, Loki, Mimir and Grafana (http://127.0.0.1:3000, admin/admin).
+    image: grafana/otel-lgtm:0.39.0
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
+
+volumes:
+  data: {}
+  postgres: {}
+  redis: {}
+  readium: {}
+  tei: {}
+  models: {}
+  ollama: {}

@@ -1,0 +1,6 @@
+# Extraction: four workers (Compose profile: extraction). amd64 images. They post to the catalog
+# with EXTRACTION_API_KEY from .env (README: "Extraction").
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - extraction.yaml

@@ -1,0 +1,5 @@
+# OCR for scanned PDFs (Compose profile: ocr). amd64 image.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - ocr.yaml

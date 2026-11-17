@@ -1,5 +1,9 @@
+# Your secrets and everything generated from elvira.json (npm run configure).
+.env
+config/
+# Admin assets the catalog collects at every start.
+static/
+# Your servers.
+ansible/inventory.yml
 node_modules/
 .DS_Store
-# Output of local runs
-/out/
-/elvira/

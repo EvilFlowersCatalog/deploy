@@ -1,0 +1,68 @@
+# ELVIRA catalog behind nginx. `npm run configure` writes config/nginx/catalog.conf from this
+# template; copy that to /etc/nginx/conf.d/ (the Ansible playbook does it for you).
+#
+# Port 80 only: `certbot --nginx -d ${ELVIRA_DOMAIN}` then adds TLS and the redirect.
+
+upstream elvira_catalog {
+    # The catalog container, published on loopback by compose.yml.
+    server 127.0.0.1:8000;
+    # Idle connections to gunicorn, whose --keep-alive (75 s) outlasts nginx's 60 s.
+    keepalive 16;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${ELVIRA_DOMAIN};
+    server_tokens off;
+
+    # Publication uploads.
+    client_max_body_size 500m;
+
+    # Set here once: a location with its own proxy_set_header would inherit none of these.
+    # The catalog builds every absolute link (OPDS, covers, LCP licences) from Host and treats
+    # requests for its public name as https.
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+
+    # Gunicorn gives a request 240 s; wait a little longer.
+    proxy_connect_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    send_timeout 300s;
+
+    # The catalog compresses its own responses.
+    gzip off;
+
+    location / {
+        proxy_pass http://elvira_catalog;
+    }
+
+    # Publications and covers. Never cache here: downloads are per reader.
+    location /data/v1/ {
+        proxy_pass http://elvira_catalog;
+    }
+
+    # The admin assets, collected into the installation directory at every start.
+    location /static/ {
+        alias ${ELVIRA_DIR}/static/;
+        expires 1d;
+        access_log off;
+    }
+
+    # Streamed answers (text/event-stream) go out as they are written.
+    location /assistant/v1/ {
+        proxy_pass http://elvira_catalog;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+    }
+    location = /mcp/v1 {
+        proxy_pass http://elvira_catalog;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+    }
+}
