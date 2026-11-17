@@ -2,6 +2,11 @@
   "name": "@evilflowers/elvira-deploy",
   "version": "0.1.0",
   "description": "Generates an ELVIRA installation: Docker Compose or Kubernetes, .env with fresh secrets, nginx, next steps.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EvilFlowersCatalog/deploy.git"
+  },
+  "homepage": "https://elvira.digital/deploy",
   "type": "module",
   "exports": {
     ".": "./src/index.js"

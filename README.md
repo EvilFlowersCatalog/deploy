@@ -8,6 +8,7 @@ browser, so the page and the CLI always write the same files.
 No dependencies; Node.js 20 or newer.
 
 ```sh
+git clone https://github.com/EvilFlowersCatalog/deploy.git && cd deploy
 node bin/elvira-deploy.js --out ./elvira                    # defaults
 node bin/elvira-deploy.js --set channel=develop --set search=bundled --out ./elvira
 node bin/elvira-deploy.js --settings elvira-deploy.json --out ./elvira   # choices saved on the page
@@ -59,6 +60,20 @@ switches the channel to develop, and so on); `plan` holds the services, volumes 
 npm test                    # unit tests, no tools needed
 npm run test:integration    # docker compose config, nginx -t, kubeconform over test/matrix.js
 ```
+
+## How the configurator stays in sync
+
+This repository is the only copy of the generator. The website
+([EvilFlowersCatalog.github.io](https://github.com/EvilFlowersCatalog/EvilFlowersCatalog.github.io))
+includes it as a git submodule at `packages/elvira-deploy`, and its build checks out the head
+of `main` here. A push to `main` runs the tests, then asks the site to rebuild
+(`repository_dispatch`, event `deploy-updated`), so <https://elvira.digital/deploy> writes the same
+files as this CLI within minutes. That needs a `SITE_DISPATCH_TOKEN` secret here: a
+fine-grained token with *Contents: read and write* on the site repository. Without it the site
+catches up on its daily build.
+
+Change the generator here, never in the website repository. The page imports only
+`src/index.js`; anything it needs is exported from there.
 
 ## Keeping it current
 

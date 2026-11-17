@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm test
+
+  # The generated files through the real tools: docker compose config, nginx -t, kubeconform.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm run test:integration
+
+  # elvira.digital/deploy runs this code (git submodule, built from this branch's head). Ask the
+  # site to rebuild so the page follows main within minutes; without the token it still catches
+  # up on its daily build.
+  notify-site:
+    needs: [test, integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rebuild elvira.digital
+        env:
+          GH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::notice::SITE_DISPATCH_TOKEN is not set; elvira.digital picks this up on its daily build."
+            exit 0
+          fi
+          gh api repos/EvilFlowersCatalog/EvilFlowersCatalog.github.io/dispatches \
+            -f event_type=deploy-updated \
+            -F "client_payload[sha]=${GITHUB_SHA}"
